@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>인터랙티브 프랙탈 생성기 (그래프 분리)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f2f5;
+            color: #333;
+            padding: 20px;
+        }
+        .main-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+            width: 100%;
+            max-width: 1300px;
+        }
+        .top-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            align-items: flex-start;
+            width: 100%;
+            padding: 20px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 250px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        canvas#fractalCanvas {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .info {
+            width: 250px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            border: 1px solid #eee;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.2em;
+            color: #0056b3;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .info p {
+            margin: 10px 0;
+        }
+        .info span {
+            font-weight: bold;
+            color: #d9534f;
+        }
+        .charts-wrapper {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            width: 100%;
+        }
+        .chart-container {
+            flex: 1;
+            min-width: 350px;
+            padding: 20px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="top-panel">
+            <div class="controls">
+                <h2>프랙탈 제어</h2>
+                <div class="control-group">
+                    <label for="depth">단계 (Depth): <span id="depthValue">10</span></label>
+                    <input type="range" id="depth" min="0" max="20" value="10">
+                </div>
+                <div class="control-group">
+                    <label for="ratio">닮음비 (Ratio): <span id="ratioValue">0.75</span></label>
+                    <input type="range" id="ratio" min="0.1" max="0.9" step="0.01" value="0.75">
+                </div>
+                <div class="control-group">
+                    <label for="angle">가지 각도 (Angle): <span id="angleValue">45</span>°</label>
+                    <input type="range" id="angle" min="10" max="180" step="1" value="45">
+                </div>
+            </div>
+            <canvas id="fractalCanvas" width="600" height="600"></canvas>
+            <div class="info">
+                <h2>실시간 정보 (최종)</h2>
+                <p>총 도형 개수: <span id="shapeCount">0</span></p>
+                <p>길이 총합: <span id="totalLength">0</span></p>
+                <p>넓이 총합: <span id="totalArea">0</span></p>
+            </div>
+        </div>
+        <div class="charts-wrapper">
+            <div class="chart-container">
+                <h2>누적 도형 개수</h2>
+                <canvas id="shapesChartCanvas"></canvas>
+            </div>
+            <div class="chart-container">
+                <h2>누적 길이 총합</h2>
+                <canvas id="lengthChartCanvas"></canvas>
+            </div>
+            <div class="chart-container">
+                <h2>누적 넓이 총합</h2>
+                <canvas id="areaChartCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM 요소
+        const fractalCanvas = document.getElementById('fractalCanvas');
+        const ctx = fractalCanvas.getContext('2d');
+        const shapesChartCtx = document.getElementById('shapesChartCanvas').getContext('2d');
+        const lengthChartCtx = document.getElementById('lengthChartCanvas').getContext('2d');
+        const areaChartCtx = document.getElementById('areaChartCanvas').getContext('2d');
+
+        const depthSlider = document.getElementById('depth');
+        const ratioSlider = document.getElementById('ratio');
+        const angleSlider = document.getElementById('angle');
+
+        const depthValue = document.getElementById('depthValue');
+        const ratioValue = document.getElementById('ratioValue');
+        const angleValue = document.getElementById('angleValue');
+
+        const shapeCountEl = document.getElementById('shapeCount');
+        const totalLengthEl = document.getElementById('totalLength');
+        const totalAreaEl = document.getElementById('totalArea');
+
+        // 전역 변수
+        let totalLength, totalArea, shapeCount;
+        let shapesChart, lengthChart, areaChart;
+
+        // 프랙탈 가지 그리기 (재귀)
+        function drawBranch(x1, y1, length, angle, depth) {
+            if (depth === 0) return;
+
+            const x2 = x1 + length * Math.cos(angle);
+            const y2 = y1 + length * Math.sin(angle);
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+
+            shapeCount++;
+            totalLength += length;
+            totalArea += length * length;
+
+            const newLength = length * parseFloat(ratioSlider.value);
+            const branchAngle = parseInt(angleSlider.value) * Math.PI / 180;
+
+            drawBranch(x2, y2, newLength, angle - branchAngle, depth - 1);
+            drawBranch(x2, y2, newLength, angle + branchAngle, depth - 1);
+        }
+        
+        // 차트 생성 헬퍼 함수
+        function createOrUpdateChart(chartInstance, ctx, label, data, labels, color) {
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderColor: color.border,
+                        backgroundColor: color.bg,
+                        borderWidth: 2,
+                        tension: 0.1,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: {
+                            type: 'linear', // 선형 스케일 사용
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toExponential(1); // 숫자가 크면 지수 표기법 사용
+                                }
+                            }
+                        },
+                        x: {
+                            title: { display: true, text: '단계 (Depth)' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+        // 차트 데이터 계산 및 업데이트
+        function updateCharts(maxDepth, ratio, startLength) {
+            const labels = [];
+            const shapeData = [];
+            const lengthData = [];
+            const areaData = [];
+
+            let cumulativeShapes = 0;
+            let cumulativeLength = 0;
+            let cumulativeArea = 0;
+
+            for (let d = 1; d <= maxDepth; d++) {
+                labels.push(d);
+                
+                const shapesInStep = Math.pow(2, d - 1);
+                cumulativeShapes += shapesInStep;
+
+                const lengthInStep = shapesInStep * startLength * Math.pow(ratio, d - 1);
+                cumulativeLength += lengthInStep;
+
+                const areaInStep = shapesInStep * Math.pow(startLength * Math.pow(ratio, d - 1), 2);
+                cumulativeArea += areaInStep;
+
+                shapeData.push(cumulativeShapes);
+                lengthData.push(cumulativeLength);
+                areaData.push(cumulativeArea);
+            }
+
+            shapesChart = createOrUpdateChart(shapesChart, shapesChartCtx, '누적 도형 개수', shapeData, labels, { border: 'rgba(217, 83, 79, 1)', bg: 'rgba(217, 83, 79, 0.2)' });
+            lengthChart = createOrUpdateChart(lengthChart, lengthChartCtx, '누적 길이 총합', lengthData, labels, { border: 'rgba(0, 86, 179, 1)', bg: 'rgba(0, 86, 179, 0.2)' });
+            areaChart = createOrUpdateChart(areaChart, areaChartCtx, '누적 넓이 총합', areaData, labels, { border: 'rgba(92, 184, 92, 1)', bg: 'rgba(92, 184, 92, 0.2)' });
+        }
+
+        // 메인 그리기 함수
+        function draw() {
+            // 캔버스 초기화
+            ctx.clearRect(0, 0, fractalCanvas.width, fractalCanvas.height);
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+
+            // 통계 초기화
+            totalLength = 0;
+            totalArea = 0;
+            shapeCount = 0;
+
+            // 슬라이더 값 가져오기
+            const maxDepth = parseInt(depthSlider.value);
+            const ratio = parseFloat(ratioSlider.value);
+            const startLength = fractalCanvas.height / 5;
+            
+            const startX = fractalCanvas.width / 2;
+            const startY = fractalCanvas.height;
+            
+            // 프랙탈 그리기 시작
+            if (maxDepth > 0) {
+                drawBranch(startX, startY, startLength, -Math.PI / 2, maxDepth);
+            }
+
+            // 정보창 업데이트
+            depthValue.textContent = maxDepth;
+            ratioValue.textContent = ratio.toFixed(2);
+            angleValue.textContent = angleSlider.value;
+            shapeCountEl.textContent = shapeCount;
+            totalLengthEl.textContent = totalLength.toExponential(2);
+            totalAreaEl.textContent = totalArea.toExponential(2);
+            
+            // 차트 업데이트
+            updateCharts(maxDepth, ratio, startLength);
+        }
+
+        // 이벤트 리스너
+        [depthSlider, ratioSlider, angleSlider].forEach(slider => slider.addEventListener('input', draw));
+        window.addEventListener('load', draw);
+    </script>
+</body>
+</html>
